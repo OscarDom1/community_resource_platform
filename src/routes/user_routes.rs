@@ -10,7 +10,7 @@ pub struct User {
     pub name: String,
     pub email: String,
     pub password: String,
-    pub created_at: Option<NaiveDateTime> // Add this if created_at is a nullable field
+    pub created_at: Option<NaiveDateTime>, // Add this if created_at is a nullable field
 }
 
 #[derive(Deserialize)]
@@ -44,6 +44,13 @@ pub async fn register_user(
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct Claims {
+    sub: String,  // Subject (user ID)
+    email: String,
+    name: String,
+    exp: usize,   // Expiration time (as a Unix timestamp)
+}
 
 #[derive(Deserialize)]
 pub struct LoginRequest {
@@ -51,13 +58,20 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+#[derive(Serialize)]
+struct LoginResponse {
+    user: User,
+    token: String,
+}
+
+
 #[post("/login")]
 pub async fn login(
     pool: web::Data<PgPool>,
     req: web::Json<LoginRequest>,
 ) -> impl Responder {
     let user = sqlx::query_as!(
-        crate::models::user::User,
+        crate::routes::user_routes::User,
         "SELECT id, name, email, password, created_at FROM users WHERE email = $1",
         req.email
     )
@@ -67,13 +81,41 @@ pub async fn login(
     match user {
         Ok(user) => {
             if verify(&req.password, &user.password).unwrap_or(false) {
-                HttpResponse::Ok().json(user)
+                // Generate and return a JWT token
+                let jwt_token = generate_jwt_token(&user).unwrap();
+                let response = LoginResponse {
+                    user,  // Include user details
+                    token: jwt_token,  // Include the token
+                };
+
+                HttpResponse::Ok().json(response) 
             } else {
                 HttpResponse::Unauthorized().body("Invalid credentials")
             }
         }
         Err(_) => HttpResponse::Unauthorized().body("Invalid credentials"),
     }
+}
+
+// Function to generate JWT token
+fn generate_jwt_token(user: &User) -> Result<String, jsonwebtoken::errors::Error> {
+    use jsonwebtoken::{encode, EncodingKey, Header};
+
+    let claims = Claims {
+        sub: user.id.to_string(),
+        email: user.email.clone(),
+        name: user.name.clone(),
+        exp: chrono::Utc::now()
+            .checked_add_signed(chrono::Duration::days(1))
+            .expect("valid timestamp")
+            .timestamp() as usize,
+    };
+
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret("your_jwt_secret".as_ref()), // Replace with actual secret
+    )
 }
 
 #[derive(Deserialize)]
@@ -114,10 +156,19 @@ pub async fn update_user(
     }
 }
 
-
 #[get("/")]
-async fn get_all_users() -> impl Responder {
-    HttpResponse::Ok().json("Fetch all users")
+async fn get_all_users(pool: web::Data<PgPool>) -> impl Responder {
+    let users = sqlx::query_as!(
+        User,
+        "SELECT id, name, email, password, created_at FROM users"
+    )
+    .fetch_all(pool.get_ref())
+    .await;
+
+    match users {
+        Ok(users) => HttpResponse::Ok().json(users),
+        Err(_) => HttpResponse::InternalServerError().body("Failed to fetch users"),
+    }
 }
 
 #[post("/")]

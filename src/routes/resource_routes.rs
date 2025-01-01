@@ -22,37 +22,61 @@ pub struct CreateResourceRequest {
     pub created_at: Option<NaiveDateTime>, // Include created_at in the request
 }
 
-#[post("/create-resource")]
+#[derive(Serialize)]
+pub struct CreatedResourceResponse {
+    pub id: Uuid,
+    pub title: String,
+    pub description: String,
+    pub available: bool,
+    pub owner_id: i32,
+    pub created_at: NaiveDateTime,
+}
+
+#[post("/create-resource/{user_id}")]
 pub async fn create_resource(
     pool: web::Data<PgPool>,
     req: web::Json<CreateResourceRequest>,
-    user_id: web::ReqData<i32>, // Assume middleware sets this
+    user_id: web::Path<i32>, // Extract user_id from the URL path
 ) -> impl Responder {
     let available = req.available.unwrap_or(true); // Default to true if available is None
+   // Use the provided created_at or default to current time if not provided
+   let created_at = req.created_at.unwrap_or_else(|| chrono::Utc::now().naive_utc());
 
-    // If created_at is not provided, it will be None
-    let created_at = req.created_at.clone(); 
-
-    // Insert the resource into the database
+    // Insert the resource into the database, using user_id as owner_id
     let result = sqlx::query!(
-        "INSERT INTO resources (title, description, available, owner_id, created_at) VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO resources (title, description, available, owner_id, created_at) 
+         VALUES ($1, $2, $3, $4, $5) RETURNING id, title, description, available, owner_id, created_at",
         req.title,
         req.description,
         available,
-        *user_id,
-        created_at // Use the provided created_at or None if it's not provided
+        *user_id,  // Use the extracted user_id as owner_id
+        created_at // Use the provided created_at or current time if not provided
     )
-    .execute(pool.get_ref())
+    .fetch_one(pool.get_ref())
     .await;
 
     match result {
-        Ok(_) => HttpResponse::Created().finish(),
+        Ok(resource) => {
+            // Map the result to the CreatedResourceResponse
+            let response = CreatedResourceResponse {
+                id: resource.id,
+                title: resource.title,
+                description: resource.description,
+                available: resource.available,
+                owner_id: resource.owner_id,
+                created_at: resource.created_at.unwrap_or_else(|| chrono::Utc::now().naive_utc()),
+            };
+
+            // Return the created resource details
+            HttpResponse::Created().json(response)
+        }
         Err(e) => {
             log::error!("Error inserting resource: {:?}", e);
             HttpResponse::InternalServerError().finish()
         }
     }
 }
+
 
 #[get("/list-resources")]
 pub async fn list_resources(pool: web::Data<PgPool>) -> impl Responder {
