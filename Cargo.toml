@@ -1,0 +1,26 @@
+[package]
+name = "community_resource_platform"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+actix-web = "4.0"
+env_logger = "0.10"
+log = "0.4"
+actix-rt = "2.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.6", features = ["postgres", "uuid", "chrono", "runtime-tokio-native-tls"] }
+jsonwebtoken = "8.0"
+dotenv = "0.15"
+regex = "1.5"
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1.0", features = ["serde"] }
+derive_more = "0.99"
+bcrypt = "0.12"
+
+
+
+
+
