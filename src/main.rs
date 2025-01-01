@@ -2,7 +2,6 @@ mod config;
 mod db;
 mod models;
 mod routes;
-mod services;
 
 use actix_web::{App, HttpServer, web};
 use actix_web::middleware::Logger;
